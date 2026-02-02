@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
             Log.d("CoroutineDemo", "Main coroutine started")
         }
 
-        job.join()
+//        job.join()
         Log.d("CoroutineDemo", "Main coroutine ended")
 
 
