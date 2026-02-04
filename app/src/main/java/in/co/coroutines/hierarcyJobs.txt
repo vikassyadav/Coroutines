@@ -25,6 +25,19 @@ class MainActivity : ComponentActivity() {
          * In real apps, prefer lifecycleScope or viewModelScope.
          *
          * When parent coroutine is cancelled, all children are automatically cancelled.
+         Job.cancel() cancels the parent coroutine and all its children.
+         it is also a type of finish and cancellation signal.
+
+         * the parent waits for its children to finish before completing — unless they are cancelled.
+         * A parent coroutine does not reach the Completed state until all its children either complete normally or are cancelled.
+
+           📌 Important nuance:
+
+           Parent waits for children
+
+           But children don’t have to finish successfully
+
+           Cancellation also counts as “finished”
          */
         GlobalScope.launch(Dispatchers.Main) {  // Parent coroutine (Main thread)
 

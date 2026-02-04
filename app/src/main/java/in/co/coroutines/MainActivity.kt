@@ -4,81 +4,105 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    private var parentJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         /*
-         * GlobalScope.launch creates a NEW coroutine with its own Job.
-         * This Job becomes the PARENT for all coroutines launched inside this block.
-         *
-         * Dispatcher.Main -> runs on Android main (UI) thread.
-         *
-         * ⚠️ GlobalScope is used here ONLY for learning/demo.
-         * In real apps, prefer lifecycleScope or viewModelScope.
+         * Parent coroutine created using GlobalScope (demo purpose only).
+         * Storing the Job reference allows:
+         * - Manual cancellation
+         * - User-initiated cancellation (back press)
          */
-        GlobalScope.launch(Dispatchers.Main) {  // Parent coroutine (Main thread)
+        parentJob = GlobalScope.launch(Dispatchers.Main) {
 
-            Log.d(
-                "CoroutineDemo",
-                "Parent (GlobalScope) -> Thread: ${Thread.currentThread().name}, " +
-                        "CoroutineContext: $coroutineContext"
-            )
+            Log.d("CoroutineDemo", "Parent started")
 
             /*
-             * launch(Dispatchers.IO)
-             *
-             * - Creates a CHILD coroutine
-             * - Inherits the PARENT Job automatically
-             * - Changes only the Dispatcher to IO
-             *
-             * Result:
-             * Parent Job
-             *    └── Child Job (IO thread)
+             * Child coroutine with cooperative cancellation
              */
-            launch(Dispatchers.IO) {  // Child coroutine on IO thread
+            launch(Dispatchers.IO) {
 
-                Log.d(
-                    "CoroutineDemo",
-                    "Child 1 -> Thread: ${Thread.currentThread().name}, " +
-                            "CoroutineContext: $coroutineContext"
-                )
+                try {
+                    Log.d("CoroutineDemo", "Child started")
 
-                delay(200) // suspends this coroutine, does NOT block the thread
-                Log.d("CoroutineDemo", "Child 1 finished")
+                    /*
+                     * isActive:
+                     * - Becomes false when coroutine is cancelled
+                     * - Allows cooperative cancellation in loops / long work
+                     */
+                    while (isActive) {
+                        Log.d("CoroutineDemo", "Child working...")
+                        delay(100) // cancellable suspension point
+                    }
+
+                } catch (e: CancellationException) {
+                    /*
+                     * CancellationException is thrown when coroutine is cancelled
+                     * This is NORMAL behavior, not an error.
+                     */
+                    Log.d("CoroutineDemo", "Child cancelled: ${e.message}")
+
+                } finally {
+                    /*
+                     * finally block ALWAYS executes:
+                     * - normal completion
+                     * - cancellation
+                     *
+                     * Used for cleanup:
+                     * - close resources
+                     * - stop timers
+                     * - save state
+                     */
+                    Log.d("CoroutineDemo", "Child cleanup in finally")
+                }
             }
 
             /*
-             * launch() without dispatcher:
-             *
-             * - Inherits BOTH Job and Dispatcher from parent
-             * - Runs on the SAME thread as parent (Main thread)
+             * Another child inheriting Main dispatcher
              */
-            launch {  // Child coroutine on Main thread
-
-                Log.d(
-                    "CoroutineDemo",
-                    "Child 2 -> Thread: ${Thread.currentThread().name}, " +
-                            "CoroutineContext: $coroutineContext"
-                )
-
-                delay(200)
-                Log.d("CoroutineDemo", "Child 2 finished")
+            launch {
+                try {
+                    Log.d("CoroutineDemo", "Child 2 started")
+                    delay(500)
+                    Log.d("CoroutineDemo", "Child 2 finished normally")
+                } finally {
+                    Log.d("CoroutineDemo", "Child 2 cleanup")
+                }
             }
 
-            /*
-             * delay here suspends ONLY the parent coroutine.
-             * Children continue running independently but are still tied to parent Job.
-             */
-            delay(100)
+            delay(300)
             Log.d("CoroutineDemo", "Parent finished")
         }
+
+        /*
+         * MANUAL cancellation demo
+         */
+        GlobalScope.launch {
+            delay(400)
+            Log.d("CoroutineDemo", "Manually cancelling parent job")
+            parentJob?.cancel()
+        }
+    }
+
+    /*
+     * USER-INITIATED CANCELLATION
+     */
+    override fun onBackPressed() {
+        Log.d("CoroutineDemo", "Back pressed → cancelling parent job")
+        parentJob?.cancel()
+        super.onBackPressed()
     }
 }

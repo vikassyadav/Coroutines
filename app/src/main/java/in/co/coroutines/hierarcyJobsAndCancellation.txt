@@ -1,0 +1,154 @@
+package `in`.co.coroutines
+
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+
+    // Reference to the parent Job so we can cancel it manually or on user action
+    private var parentJob: Job? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        /*
+         * -------------------------
+         * Parent coroutine
+         * -------------------------
+         * Created using GlobalScope for demonstration purposes.
+         * GlobalScope is generally NOT recommended for real apps
+         * because it lives for the whole app lifecycle and ignores Activity/Fragment lifecycles.
+         *
+         * The launch() function returns a Job object, which we store in parentJob.
+         * This allows:
+         *   1. Manual cancellation (anywhere in code)
+         *   2. User-initiated cancellation (e.g., back press)
+         *
+         * Dispatcher.Main:
+         * - Executes this coroutine on the Android main (UI) thread.
+         */
+        parentJob = GlobalScope.launch(Dispatchers.Main) {
+
+            Log.d("CoroutineDemo", "Parent started")
+
+            /*
+             * -------------------------
+             * Child coroutine 1 (IO)
+             * -------------------------
+             * This child coroutine demonstrates cooperative cancellation using isActive,
+             * try/catch, and finally blocks.
+             *
+             * launch(Dispatchers.IO):
+             * - Switches execution to background IO thread
+             * - Inherits parentJob as its parent
+             *   -> Cancelling parentJob automatically cancels this child
+             */
+            launch(Dispatchers.IO) {
+
+                try {
+                    Log.d("CoroutineDemo", "Child started")
+
+                    /*
+                     * Cooperative cancellation:
+                     * - while(isActive) loop keeps running until the coroutine is cancelled
+                     * - isActive becomes false automatically if parentJob or this coroutine is cancelled
+                     * - delay(100) is a suspending function that is cancellable
+                     *
+                     * Without isActive, a long-running loop would ignore cancellation.
+                     */
+                    while (isActive) {
+                        Log.d("CoroutineDemo", "Child working...")
+                        delay(100) // suspends without blocking the thread, also checks for cancellation
+                    }
+
+                } catch (e: CancellationException) {
+                    /*
+                     * CancellationException is thrown when a coroutine is cancelled.
+                     * This is normal behavior, NOT an error.
+                     * We catch it here to log or perform custom handling if needed.
+                     */
+                    Log.d("CoroutineDemo", "Child cancelled: ${e.message}")
+
+                } finally {
+                    /*
+                     * finally block ALWAYS executes, regardless of:
+                     * - normal completion
+                     * - cancellation
+                     *
+                     * Useful for cleanup:
+                     * - closing resources
+                     * - stopping timers
+                     * - saving state
+                     */
+                    Log.d("CoroutineDemo", "Child cleanup in finally")
+                }
+            }
+
+            /*
+             * -------------------------
+             * Child coroutine 2 (Main thread)
+             * -------------------------
+             * - launch() without a dispatcher inherits the parent dispatcher (Main thread)
+             * - Shows how cancellation works for children on the same thread
+             */
+            launch {
+                try {
+                    Log.d("CoroutineDemo", "Child 2 started")
+                    delay(500) // suspend for demonstration
+                    Log.d("CoroutineDemo", "Child 2 finished normally")
+                } finally {
+                    // Cleanup block always runs, even if parentJob is cancelled
+                    Log.d("CoroutineDemo", "Child 2 cleanup")
+                }
+            }
+
+            /*
+             * -------------------------
+             * Parent coroutine delay
+             * -------------------------
+             * - Simulates some work in the parent
+             * - delay is cancellable
+             * - Parent coroutine will not reach Completed state until all children are finished or cancelled
+             */
+            delay(300)
+            Log.d("CoroutineDemo", "Parent finished")
+        }
+
+        /*
+         * -------------------------
+         * Manual cancellation example
+         * -------------------------
+         * Demonstrates cancelling the parentJob programmatically
+         * All children will automatically be cancelled because they are part of the parent job hierarchy.
+         */
+        GlobalScope.launch {
+            delay(400) // wait a bit before cancelling
+            Log.d("CoroutineDemo", "Manually cancelling parent job")
+            parentJob?.cancel()
+        }
+    }
+
+    /*
+     * -------------------------
+     * User-initiated cancellation
+     * -------------------------
+     * When the user presses the back button:
+     * - parentJob is cancelled
+     * - all child coroutines are automatically cancelled
+     */
+    override fun onBackPressed() {
+        Log.d("CoroutineDemo", "Back pressed → cancelling parent job")
+        parentJob?.cancel()
+        super.onBackPressed()
+    }
+}
