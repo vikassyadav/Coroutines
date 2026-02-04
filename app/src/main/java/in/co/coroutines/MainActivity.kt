@@ -4,11 +4,10 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -16,32 +15,70 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // lifecycleScope is tied to Activity lifecycle (safe, no memory leaks)
-        lifecycleScope.async {
-            Log.d("CoroutineDemo", "Main coroutine started")
+        /*
+         * GlobalScope.launch creates a NEW coroutine with its own Job.
+         * This Job becomes the PARENT for all coroutines launched inside this block.
+         *
+         * Dispatcher.Main -> runs on Android main (UI) thread.
+         *
+         * ⚠️ GlobalScope is used here ONLY for learning/demo.
+         * In real apps, prefer lifecycleScope or viewModelScope.
+         */
+        GlobalScope.launch(Dispatchers.Main) {  // Parent coroutine (Main thread)
 
-            // Calling suspend function
-            printFollowers()
+            Log.d(
+                "CoroutineDemo",
+                "Parent (GlobalScope) -> Thread: ${Thread.currentThread().name}, " +
+                        "CoroutineContext: $coroutineContext"
+            )
 
-            Log.d("CoroutineDemo", "Main coroutine ended")
+            /*
+             * launch(Dispatchers.IO)
+             *
+             * - Creates a CHILD coroutine
+             * - Inherits the PARENT Job automatically
+             * - Changes only the Dispatcher to IO
+             *
+             * Result:
+             * Parent Job
+             *    └── Child Job (IO thread)
+             */
+            launch(Dispatchers.IO) {  // Child coroutine on IO thread
+
+                Log.d(
+                    "CoroutineDemo",
+                    "Child 1 -> Thread: ${Thread.currentThread().name}, " +
+                            "CoroutineContext: $coroutineContext"
+                )
+
+                delay(200) // suspends this coroutine, does NOT block the thread
+                Log.d("CoroutineDemo", "Child 1 finished")
+            }
+
+            /*
+             * launch() without dispatcher:
+             *
+             * - Inherits BOTH Job and Dispatcher from parent
+             * - Runs on the SAME thread as parent (Main thread)
+             */
+            launch {  // Child coroutine on Main thread
+
+                Log.d(
+                    "CoroutineDemo",
+                    "Child 2 -> Thread: ${Thread.currentThread().name}, " +
+                            "CoroutineContext: $coroutineContext"
+                )
+
+                delay(200)
+                Log.d("CoroutineDemo", "Child 2 finished")
+            }
+
+            /*
+             * delay here suspends ONLY the parent coroutine.
+             * Children continue running independently but are still tied to parent Job.
+             */
+            delay(100)
+            Log.d("CoroutineDemo", "Parent finished")
         }
-    }
-
-    // This must be suspend because it calls another suspend function
-    private suspend fun printFollowers() {
-
-        // Switch to IO thread for network / DB work
-        val fbFollowers = withContext(Dispatchers.IO) {
-            getFbFollowers()
-        }
-
-        // This runs on Main thread again
-        Log.d("CoroutineDemo", "Facebook Followers: $fbFollowers")
-    }
-
-    // Simulating network call
-    private suspend fun getFbFollowers(): Int {
-        delay(200) // pretend API delay
-        return 52
     }
 }
